@@ -5,6 +5,6 @@ LINK=-L../jsmn -ljsmn
 %.o: %.c Makefile
 	gcc -O $(INCLUDES) -c -Wall -Werror $< -o $@
 
-hlsbucket: hlsbucket.o String.o Mem.o dpf.o jsmn_extra.o File.o ArrayU8.o
+hlsbucket: hlsbucket.o String.o Mem.o dpf.o jsmn_extra.o File.o ArrayU8.o cti_utils.o
 	gcc -o $@ $^ $(LINK)
 
