@@ -69,11 +69,9 @@ static int checkdirs(String * root, String * path)
 
 static struct {
   String * expireCommand;
-  String * outdir;
   FILE * fout;
 } private = {
   .expireCommand = NULL
-  ,.outdir = NULL
   ,.fout = NULL
 };
 
