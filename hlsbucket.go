@@ -1,3 +1,6 @@
+// Golang port of hlsbucket.c
+// Catch Mpeg2TS packets over UDP, save as .ts, generate .m3u8 for HLS
+// Also relay to second host.
 package main
 
 import (
@@ -7,6 +10,8 @@ import (
 	"encoding/json"
 	"io/ioutil"
 	"net"
+	"log"
+	// "strconv"
 )
 
 var CFGPATH = "hlsbucket.json"
@@ -18,6 +23,10 @@ type Config struct {
 	HlsRelayPort int
 }
 
+func handlePacket(buffer []byte, n int) {
+	// log.Printf("handlePacket\n")
+}
+
 func main() {
 	var err error
 	var cfgText []byte
@@ -25,20 +34,23 @@ func main() {
 	var receiver net.PacketConn
 	var relay net.PacketConn
 
+	setRelay := make(chan net.Conn)
+	relayPacket := make(chan []byte)
+
 	if (len(os.Args) != 1) {
-		fmt.Fprintf(os.Stderr, "%s: specify options in %s\n", path.Base(os.Args[0]), CFGPATH);
+		log.Printf("%s: specify options in %s\n", path.Base(os.Args[0]), CFGPATH);
 		os.Exit(1)
 	}
 
 	cfgText, err = ioutil.ReadFile(CFGPATH)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "%s: could not load config file %s\n", path.Base(os.Args[0]), CFGPATH);
+		log.Printf("%s: could not load config file %s\n", path.Base(os.Args[0]), CFGPATH);
 		os.Exit(1)
 	}
 
 	err = json.Unmarshal(cfgText, &cfg)
 	if err != nil {
-		fmt.Printf("unmarshal error!\n")
+		log.Printf("unmarshal error!\n")
 		os.Exit(1)
 	}
 
@@ -50,50 +62,63 @@ func main() {
 
 	receiver, err = net.ListenPacket("udp", fmt.Sprintf(":%d", cfg.HlsReceivePort))
 	if err != nil {
-		fmt.Printf("receive port listen error\n")
+		log.Printf("receive port listen error\n")
 		os.Exit(1)
 	}
 
 	relay, err = net.ListenPacket("udp", fmt.Sprintf(":%d", cfg.HlsRelayPort))
 	if err != nil {
-		fmt.Printf("relay port listen error\n")
+		log.Printf("relay port listen error\n")
 		os.Exit(1)
 	}
 
 	go func () {
+		// Receive data, store with expiration.
 		buffer := make([]byte, 1500)
 		for {
-			// Q: is "err" here the same as the one above,
-			// or does the closure make a new copy?
-			var n int
-			// int, Addr, error
-			n, _, err = receiver.ReadFrom(buffer)
+			n, _, err := receiver.ReadFrom(buffer)
 			// Q: if n is <= 0, will err also be set?
-			fmt.Fprintf(os.Stderr, "%d bytes received\n", n)
 			if err != nil {
+				log.Printf("%v\n", err)
 				continue
 			}
+			handlePacket(buffer, n)
+			relayPacket <- buffer[0:n]
 		}
 	}()
 
 	go func () {
+		// Listen for request to relay.
 		buffer := make([]byte, 1500)
 		for {
-			// Q: is "err" here the same as the one above,
-			// or does the closure make a new copy?
-			var n int
-			// int, Addr, error
-			n, _, err = relay.ReadFrom(buffer)
-			// Q: if n is <= 0, will err also be set?
-			fmt.Fprintf(os.Stderr, "%d bytes received\n", n)
+			_, addr, err := relay.ReadFrom(buffer)
 			if err != nil {
 				continue
+			}
+			var c net.Conn
+			c, err = net.Dial("udp", addr.String())
+			if err == nil {
+				// Inform main loop.
+				setRelay <- c
+			} else {
+				log.Printf("%v\n", err)
 			}
 		}
 	}()
 
-	select {
-		// How do I do select() on the receive and relay ports?
+	var data []byte
+	var rconn net.Conn
+	var rconnSet bool = false
+	for {
+		select {
+		case data = <- relayPacket:
+			if rconnSet {
+				log.Printf("%d\n", len(data))
+				rconn.Write(data)
+			}
+		case rconn = <- setRelay:
+			log.Printf("setting relay to %v\n", rconn.RemoteAddr().String())
+			rconnSet = true
+		}
 	}
-
 }
