@@ -11,10 +11,14 @@ import (
 	"io/ioutil"
 	"net"
 	"log"
+	"bytes"
+	// "encoding/hex"
 	// "strconv"
+	"time"
 )
 
 var CFGPATH = "hlsbucket.json"
+var PKT_SIZE int = 188
 
 type Config struct {
 	SaveDir string
@@ -23,14 +27,61 @@ type Config struct {
 	HlsRelayPort int
 }
 
-func handlePacket(buffer []byte, n int) {
-	// log.Printf("handlePacket\n")
+var cfg Config			// global config
+var fout *os.File		// current MpegTS file being written
+
+func MpegTS_PID(packet []byte) int {
+	return ((int(packet[1]) & 0x1f)) << 8 | int(packet[2])
+}
+
+func handlePacket(buffer []byte, saveDir string) {
+	pid := MpegTS_PID(buffer)
+	log.Printf("%02x %02x %02x pid %d\n", buffer[0], buffer[1], buffer[2], pid)
+
+	nal7index := bytes.Index(buffer, []byte("\x00\x00\x00\x01\x27"))
+	if nal7index >= 0 {
+		log.Printf("NAL7 @ %d\n", nal7index)
+		if fout != nil {
+			fout.Close()
+			fout = nil
+		}
+
+		t := time.Now().UTC()
+		outdir := fmt.Sprintf("%s/%04d/%02d/%02d/%02d",
+			cfg.SaveDir,
+			t.Year(),
+			t.Month(),
+			t.Day(),
+			t.Hour())
+		fmt.Printf("%v\n", outdir)
+
+		if os.MkdirAll(outdir, 0755) != nil {
+			log.Printf("error creating %s\n", outdir)
+			return
+		}
+
+		dt := float64(t.Unix()) + float64(t.Nanosecond())/1000000000.0
+		outname := fmt.Sprintf("%s/%.3f.ts", outdir, dt)
+
+		var err error
+		fout, err = os.Create(outname)
+		if (err == nil) {
+			fout.Chmod(0644)
+			// expire
+		}
+	}
+
+	if fout != nil {
+		n, err := fout.Write(buffer)
+		if (err != nil || n != len(buffer) ) {
+			log.Printf("handlePacket write error")
+		}
+	}
 }
 
 func main() {
 	var err error
 	var cfgText []byte
-	var cfg Config
 	var receiver net.PacketConn
 	var relay net.PacketConn
 
@@ -38,13 +89,13 @@ func main() {
 	relayPacket := make(chan []byte)
 
 	if (len(os.Args) != 1) {
-		log.Printf("%s: specify options in %s\n", path.Base(os.Args[0]), CFGPATH);
+		log.Printf("%s: specify options in %s\n", path.Base(os.Args[0]), CFGPATH)
 		os.Exit(1)
 	}
 
 	cfgText, err = ioutil.ReadFile(CFGPATH)
 	if err != nil {
-		log.Printf("%s: could not load config file %s\n", path.Base(os.Args[0]), CFGPATH);
+		log.Printf("%s: could not load config file %s\n", path.Base(os.Args[0]), CFGPATH)
 		os.Exit(1)
 	}
 
@@ -82,7 +133,10 @@ func main() {
 				log.Printf("%v\n", err)
 				continue
 			}
-			handlePacket(buffer, n)
+			for i:=0; i < n; i += PKT_SIZE {
+				handlePacket(buffer[i:i+PKT_SIZE], cfg.SaveDir)
+			}
+
 			relayPacket <- buffer[0:n]
 		}
 	}()
