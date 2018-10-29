@@ -35,8 +35,8 @@ func MpegTS_PID(packet []byte) int {
 }
 
 func handlePacket(buffer []byte, saveDir string) {
-	pid := MpegTS_PID(buffer)
-	log.Printf("%02x %02x %02x pid %d\n", buffer[0], buffer[1], buffer[2], pid)
+	// pid := MpegTS_PID(buffer)
+	// log.Printf("%02x %02x %02x pid %d\n", buffer[0], buffer[1], buffer[2], pid)
 
 	nal7index := bytes.Index(buffer, []byte("\x00\x00\x00\x01\x27"))
 	if nal7index >= 0 {
@@ -84,8 +84,10 @@ func main() {
 	var cfgText []byte
 	var receiver net.PacketConn
 	var relay net.PacketConn
+	var relayListen net.Listener
 
 	setRelay := make(chan net.Conn)
+	setRelayTCP := make(chan net.Conn)
 	relayPacket := make(chan []byte)
 
 	if (len(os.Args) != 1) {
@@ -119,7 +121,13 @@ func main() {
 
 	relay, err = net.ListenPacket("udp", fmt.Sprintf(":%d", cfg.HlsRelayPort))
 	if err != nil {
-		log.Printf("relay port listen error\n")
+		log.Printf("udp relay port listen error\n")
+		os.Exit(1)
+	}
+
+	relayListen, err = net.Listen("tcp", fmt.Sprintf(":%d", cfg.HlsRelayPort))
+	if err != nil {
+		log.Printf("tcp relay port listen error\n")
 		os.Exit(1)
 	}
 
@@ -160,19 +168,41 @@ func main() {
 		}
 	}()
 
+	go func() {
+		// Listen for TCP relay
+		for {
+			c, err := relayListen.Accept()
+			if err == nil {
+				setRelayTCP <- c
+			} else {
+				log.Printf("%v\n", err)
+			}
+
+		}
+	}()
+
 	var data []byte
 	var rconn net.Conn
 	var rconnSet bool = false
+	var tconn net.Conn
+	var tconnSet bool = false
 	for {
 		select {
 		case data = <- relayPacket:
 			if rconnSet {
-				log.Printf("%d\n", len(data))
+				//log.Printf("%d\n", len(data))
 				rconn.Write(data)
+			}
+			if tconnSet {
+				//log.Printf("%d\n", len(data))
+				tconn.Write(data)
 			}
 		case rconn = <- setRelay:
 			log.Printf("setting relay to %v\n", rconn.RemoteAddr().String())
 			rconnSet = true
+		case tconn = <- setRelayTCP:
+			log.Printf("setting relay to %v\n", tconn.RemoteAddr().String())
+			tconnSet = true
 		}
 	}
 }
