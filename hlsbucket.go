@@ -15,6 +15,7 @@ import (
 	// "encoding/hex"
 	// "strconv"
 	"time"
+	"hash/crc32"
 )
 
 var CFGPATH = "hlsbucket.json"
@@ -144,8 +145,10 @@ func main() {
 			for i:=0; i < n; i += PKT_SIZE {
 				handlePacket(buffer[i:i+PKT_SIZE], cfg.SaveDir)
 			}
-
-			relayPacket <- buffer[0:n]
+			b2 := make([]byte, n)
+			copy(b2, buffer[0:n])
+			fmt.Printf("%d bytes in, %#x\n", n, crc32.ChecksumIEEE(b2))
+			relayPacket <- b2
 		}
 	}()
 
@@ -190,7 +193,8 @@ func main() {
 		select {
 		case data = <- relayPacket:
 			if rconnSet {
-				//log.Printf("%d\n", len(data))
+				fmt.Printf("%d bytes out, %#x\n", len(data),
+					crc32.ChecksumIEEE(data))
 				rconn.Write(data)
 			}
 			if tconnSet {
@@ -198,10 +202,10 @@ func main() {
 				tconn.Write(data)
 			}
 		case rconn = <- setRelay:
-			log.Printf("setting relay to %v\n", rconn.RemoteAddr().String())
+			log.Printf("setting udp relay to %v\n", rconn.RemoteAddr().String())
 			rconnSet = true
 		case tconn = <- setRelayTCP:
-			log.Printf("setting relay to %v\n", tconn.RemoteAddr().String())
+			log.Printf("setting tcp relay to %v\n", tconn.RemoteAddr().String())
 			tconnSet = true
 		}
 	}
