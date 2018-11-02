@@ -26,6 +26,7 @@ type Config struct {
 	ExpireCommand string
 	HlsReceivePort int
 	HlsRelayPort int
+	DebugInOut bool
 }
 
 var cfg Config			// global config
@@ -78,6 +79,14 @@ func handlePacket(buffer []byte, saveDir string) {
 			log.Printf("handlePacket write error")
 		}
 	}
+}
+
+// I wrote this tiny function because I'm spoiled by other
+// languages that allow making a new array-type object in-line.
+func clone(input []byte, start int, end int) []byte {
+	cloned := make([]byte, end-start)
+	copy(cloned, input[start:end])
+	return cloned
 }
 
 func main() {
@@ -145,10 +154,11 @@ func main() {
 			for i:=0; i < n; i += PKT_SIZE {
 				handlePacket(buffer[i:i+PKT_SIZE], cfg.SaveDir)
 			}
-			b2 := make([]byte, n)
-			copy(b2, buffer[0:n])
-			fmt.Printf("%d bytes in, %#x\n", n, crc32.ChecksumIEEE(b2))
-			relayPacket <- b2
+			if (cfg.DebugInOut) {
+				log.Printf("%d bytes in, %#x\n", n,
+					crc32.ChecksumIEEE(buffer[0:n]))
+			}
+			relayPacket <- clone(buffer, 0, n)
 		}
 	}()
 
@@ -193,8 +203,10 @@ func main() {
 		select {
 		case data = <- relayPacket:
 			if rconnSet {
-				fmt.Printf("%d bytes out, %#x\n", len(data),
-					crc32.ChecksumIEEE(data))
+				if (cfg.DebugInOut) {
+					fmt.Printf("%d bytes out, %#x\n", len(data),
+						crc32.ChecksumIEEE(data))
+				}
 				rconn.Write(data)
 			}
 			if tconnSet {
