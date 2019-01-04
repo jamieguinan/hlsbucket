@@ -17,8 +17,7 @@ was about 2/3 as many lines of code, and I was able to use Go standard libraries
 
 ## How it works, sender
 
-The sender code isn't part of this project, but its behavior drives hlsbucket's
-implementation.
+The sender code isn't part of this project (it is a [CTI script](https://github.com/jamieguinan/cti/blob/master/README.md)) but its behavior drives hlsbucket's implementation.
 
 The sender [muxes and segments](https://github.com/jamieguinan/cti/blob/master/MpegTSMux.c)
 [H.264](https://github.com/jamieguinan/cti/blob/master/RPiH264Enc.c)
@@ -48,3 +47,15 @@ passes 188-byte chunks to `handlePacket()`, which looks for
 [NAL](https://en.wikipedia.org/wiki/Network_Abstraction_Layer) type 7
 packets and starts a new segment whenever it finds one.
 
+
+## Adding a web server
+
+After the initial C-to-Go port with file archiving, I wanted to be able to generate HLS index files dynamically, so that I could serve views to web browsers. [MpegTSMux.c](https://github.com/jamieguinan/cti/blob/master/MpegTSMux.c) has some of this capability built-in, but is has some limitations,
+
+  * It writes files rather than dynamically generating them.
+  * It only tracks the "live" stream.
+  * It doesn't allow for an idea I had some time ago: predicting the next segment,
+    and sending (relaying) it as it is received. I think this could tighten up live
+    playback delay from a few seconds to less than a second.
+
+[ I have already written a simple web service application (instaskunk), so I hope it will be easy to add the functionality I want to hlsbucket. ]
