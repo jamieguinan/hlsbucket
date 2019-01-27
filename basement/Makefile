@@ -1,12 +1,9 @@
-VPATH=../cti
-INCLUDES=-I../jsmn -I../cti
-LINK=-L../jsmn -ljsmn
+PROJECTS?=$(HOME)/projects
+VPATH=$(PROJECTS)/cti
+INCLUDES=-I$(PROJECTS)/jsmn -I$(PROJECTS)/cti
+LINK=-L$(PROJECTS)/jsmn -ljsmn
 
-default: hlsbucket
-
-hlsbucket: hlsbucket.go Makefile
-	go build hlsbucket.go
-	strip hlsbucket
+default: hlsbucket-c
 
 %.o: %.c Makefile
 	gcc -O $(INCLUDES) -c -Wall -Werror $< -o $@
