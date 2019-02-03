@@ -16,6 +16,9 @@ import (
 	// "strconv"
 	"time"
 	"hash/crc32"
+	"os/exec"
+	"container/list"
+	"sync"
 )
 
 var CFGPATH = "hlsbucket.json"
@@ -29,52 +32,83 @@ type Config struct {
 	DebugInOut bool
 }
 
-var cfg Config			// global config
-var fout *os.File		// current MpegTS file being written
+type Global struct {
+	recent *list.List	// recent .ts files
+	mediaSequence int
+	recentLock sync.Mutex	// lock for recent and mediaSequence
+
+	cfg Config		// config
+	fout *os.File		// current MpegTS file being written
+}
+
+var g Global			// global context
+
 
 func MpegTS_PID(packet []byte) int {
 	return ((int(packet[1]) & 0x1f)) << 8 | int(packet[2])
 }
 
 func handlePacket(buffer []byte, saveDir string) {
-	// pid := MpegTS_PID(buffer)
-	// log.Printf("%02x %02x %02x pid %d\n", buffer[0], buffer[1], buffer[2], pid)
+	//pid := MpegTS_PID(buffer)
+	//log.Printf("%02x %02x %02x pid %d\n", buffer[0], buffer[1], buffer[2], pid)
 
 	nal7index := bytes.Index(buffer, []byte("\x00\x00\x00\x01\x27"))
 	if nal7index >= 0 {
 		log.Printf("NAL7 @ %d\n", nal7index)
-		if fout != nil {
-			fout.Close()
-			fout = nil
+		if g.fout != nil {
+			g.fout.Close()
+			g.fout = nil
 		}
 
 		t := time.Now().UTC()
 		outdir := fmt.Sprintf("%s/%04d/%02d/%02d/%02d",
-			cfg.SaveDir,
+			g.cfg.SaveDir,
 			t.Year(),
 			t.Month(),
 			t.Day(),
 			t.Hour())
-		fmt.Printf("%v\n", outdir)
+		// log.Printf("%v\n", outdir)
 
 		if os.MkdirAll(outdir, 0755) != nil {
 			log.Printf("error creating %s\n", outdir)
 			return
+		} else {
+			// Expire the outdir in 1h10m, all the files below should
+			// clear out ahead of it.
+			cmd := exec.Command(g.cfg.ExpireCommand, outdir, "70m")
+			if cmd.Start() == nil {
+				defer cmd.Wait()
+			}
 		}
 
 		dt := float64(t.Unix()) + float64(t.Nanosecond())/1000000000.0
 		outname := fmt.Sprintf("%s/%.3f.ts", outdir, dt)
 
 		var err error
-		fout, err = os.Create(outname)
+		g.fout, err = os.Create(outname)
 		if (err == nil) {
-			fout.Chmod(0644)
-			// expire
+			// Start new output file.
+			g.fout.Chmod(0644)
+			cmd := exec.Command(g.cfg.ExpireCommand, outname, "5m")
+			if cmd.Start() == nil {
+				defer cmd.Wait()
+			}
+
+			// Add outname to recent list.
+			g.recentLock.Lock()
+			g.recent.PushBack(outname)
+			if g.recent.Len() == 5 {
+				// Trim back to 4 names, will only
+				// list 3 of those in the m3u8.
+				g.recent.Remove(g.recent.Front())
+			}
+			g.mediaSequence += 1
+			g.recentLock.Unlock()
 		}
 	}
 
-	if fout != nil {
-		n, err := fout.Write(buffer)
+	if g.fout != nil {
+		n, err := g.fout.Write(buffer)
 		if (err != nil || n != len(buffer) ) {
 			log.Printf("handlePacket write error")
 		}
@@ -96,6 +130,8 @@ func main() {
 	var relay net.PacketConn
 	var relayListen net.Listener
 
+	g.recent = list.New()
+
 	setRelay := make(chan net.Conn)
 	setRelayTCP := make(chan net.Conn)
 	relayPacket := make(chan []byte)
@@ -111,31 +147,31 @@ func main() {
 		os.Exit(1)
 	}
 
-	err = json.Unmarshal(cfgText, &cfg)
+	err = json.Unmarshal(cfgText, &g.cfg)
 	if err != nil {
 		log.Printf("unmarshal error!\n")
 		os.Exit(1)
 	}
 
-	fmt.Printf("saveDir=%s\nexpireCommand=%s\nhlsReceivePort=%d\nhlsRelayPort=%d\n",
-		cfg.SaveDir,
-		cfg.ExpireCommand,
-		cfg.HlsReceivePort,
-		cfg.HlsRelayPort)
+	log.Printf("saveDir=%s\nexpireCommand=%s\nhlsReceivePort=%d\nhlsRelayPort=%d\n",
+		g.cfg.SaveDir,
+		g.cfg.ExpireCommand,
+		g.cfg.HlsReceivePort,
+		g.cfg.HlsRelayPort)
 
-	receiver, err = net.ListenPacket("udp", fmt.Sprintf(":%d", cfg.HlsReceivePort))
+	receiver, err = net.ListenPacket("udp", fmt.Sprintf(":%d", g.cfg.HlsReceivePort))
 	if err != nil {
 		log.Printf("receive port listen error\n")
 		os.Exit(1)
 	}
 
-	relay, err = net.ListenPacket("udp", fmt.Sprintf(":%d", cfg.HlsRelayPort))
+	relay, err = net.ListenPacket("udp", fmt.Sprintf(":%d", g.cfg.HlsRelayPort))
 	if err != nil {
 		log.Printf("udp relay port listen error\n")
 		os.Exit(1)
 	}
 
-	relayListen, err = net.Listen("tcp", fmt.Sprintf(":%d", cfg.HlsRelayPort))
+	relayListen, err = net.Listen("tcp", fmt.Sprintf(":%d", g.cfg.HlsRelayPort))
 	if err != nil {
 		log.Printf("tcp relay port listen error\n")
 		os.Exit(1)
@@ -152,9 +188,9 @@ func main() {
 				continue
 			}
 			for i:=0; i < n; i += PKT_SIZE {
-				handlePacket(buffer[i:i+PKT_SIZE], cfg.SaveDir)
+				handlePacket(buffer[i:i+PKT_SIZE], g.cfg.SaveDir)
 			}
-			if (cfg.DebugInOut) {
+			if (g.cfg.DebugInOut) {
 				log.Printf("%d bytes in, %#x\n", n,
 					crc32.ChecksumIEEE(buffer[0:n]))
 			}
@@ -206,8 +242,8 @@ func main() {
 		select {
 		case data = <- relayPacket:
 			if rconnSet {
-				if (cfg.DebugInOut) {
-					fmt.Printf("%d bytes out, %#x\n", len(data),
+				if (g.cfg.DebugInOut) {
+					log.Printf("%d bytes out, %#x\n", len(data),
 						crc32.ChecksumIEEE(data))
 				}
 				rconn.Write(data)
