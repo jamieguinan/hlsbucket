@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
-	//"time"
+	"time"
 	"path/filepath"
 )
 
@@ -27,7 +27,10 @@ func live_index(w http.ResponseWriter, r *http.Request) {
 		// most recent file, which is still being written.
 		if e != g.recent.Back() {
 			fmt.Fprintf(w,"#EXTINF:%d, no desc\n", duration)
-			fmt.Fprintf(w, "%s\n", e.Value)
+			// Replace savedir with "ts/".
+			segment := fmt.Sprintf("%s", e.Value)
+			segment = segment[len(g.cfg.SaveDir)+1:]
+			fmt.Fprintf(w, "ts/%s\n", segment)
 		}
 	}
 
@@ -37,7 +40,7 @@ func live_index(w http.ResponseWriter, r *http.Request) {
 func live_meta(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "audio/x-mpegurl")
 	fmt.Fprintf(w, "#EXTM3U\n")
-	fmt.Fprintf(w, "#EXT-X-STREAM-INF:PROGRAM-ID=1, BANDWIDTH=100000\n")
+	fmt.Fprintf(w, "#EXT-X-STREAM-INF:PROGRAM-ID=1, BANDWIDTH=200000\n")
 	fmt.Fprintf(w, "live_index.m3u8\n")
 }
 
@@ -66,12 +69,21 @@ func http_server() {
 
         http.HandleFunc("/ts/", func(w http.ResponseWriter, r *http.Request) {
 		p := filepath.Clean(r.URL.Path)
+		// Remove "/ts" prefix.
 		p = p[len("/ts/"):]
 		log.Printf("ts subpath handler %s\n", p)
-		f, err := os.Open("ts/" + p)
+		// Add back savedir
+		tspath := g.cfg.SaveDir + "/" + p
+		f, err := os.Open(tspath)
 		if err != nil {
+			// FIXME: 404
 			log.Printf("%v\n", err)
 			return
+		}
+
+		s, _ := os.Stat(tspath)
+		if s != nil {
+			log.Printf("age: %v\n", time.Now().Sub(s.ModTime()))
 		}
 
 		w.Header().Set("Content-Type", "video/MP2T")
