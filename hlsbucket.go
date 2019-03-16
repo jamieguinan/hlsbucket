@@ -19,6 +19,7 @@ import (
 	"os/exec"
 	"container/list"
 	"sync"
+	"path/filepath"
 )
 
 var CFGPATH = "hlsbucket.json"
@@ -72,14 +73,12 @@ func handlePacket(buffer []byte, saveDir string) {
 		if os.MkdirAll(outdir, 0755) != nil {
 			log.Printf("error creating %s\n", outdir)
 			return
-		} else {
-			// Expire the outdir in 1h10m, all the files below should
-			// clear out ahead of it.
-			cmd := exec.Command(g.cfg.ExpireCommand, outdir, "70m")
-			if cmd.Start() == nil {
-				defer cmd.Wait()
-			}
 		}
+
+		// Note: I experimented with expiring `outdir`, but it is complicated
+		// because the intermediate dirs might contain preserved
+		// files. Better solution is to periodically flush the tree of
+		// empty folders.
 
 		dt := float64(t.Unix()) + float64(t.Nanosecond())/1000000000.0
 		outname := fmt.Sprintf("%s/%.3f.ts", outdir, dt)
@@ -114,6 +113,29 @@ func handlePacket(buffer []byte, saveDir string) {
 		}
 	}
 }
+
+func vacuum() {
+	// Periodically walk SaveDir and remove empty directories.
+	// filepath.Walk is breadth-first, so it take up to N passes
+	// for N-deep empty trees to clear out, but that's Ok.
+	for {
+		filepath.Walk(g.cfg.SaveDir, func(path string, info os.FileInfo, err error) error {
+			if info.IsDir() && path != g.cfg.SaveDir {
+				files, _ := ioutil.ReadDir(path)
+				if len(files) == 0 {
+					os.Remove(path)
+				}
+				// Note: I can imagine that a large tree full of empty
+				// folders could consume a lot of IO, starving the writer
+				// threads. A 10 millisecond sleep here could
+				// alleviate that.
+			}
+			return nil
+		})
+		time.Sleep(time.Hour)
+	}
+}
+
 
 // I wrote this tiny function because I'm spoiled by other
 // languages that allow making a new array-type object in-line.
@@ -231,6 +253,8 @@ func main() {
 	}()
 
 	go http_server()
+
+	go vacuum()
 
 	// Main loop relays packets between goroutines.
 	var data []byte
