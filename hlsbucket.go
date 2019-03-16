@@ -1,6 +1,6 @@
 // Golang port of hlsbucket.c
-// Catch Mpeg2TS packets over UDP, save as .ts, generate .m3u8 for HLS
-// Also relay to second host.
+// Catch Mpeg2TS packets over UDP, save as .ts, generate .m3u8 for HLS.
+// Also allow relay to second host over UDP and/or TCP.
 package main
 
 import (
@@ -115,7 +115,7 @@ func handlePacket(buffer []byte, saveDir string) {
 }
 
 func vacuum() {
-	// Periodically walk SaveDir and remove empty directories.
+	// Periodically walk SaveDir and remove empty folders.
 	// filepath.Walk is breadth-first, so it take up to N passes
 	// for N-deep empty trees to clear out, but that's Ok.
 	for {
@@ -137,8 +137,8 @@ func vacuum() {
 }
 
 
-// I wrote this tiny function because I'm spoiled by other
-// languages that allow making a new array-type object in-line.
+// Go slices share data with underlying arrays, but sometimes I want
+// a new object.
 func clone(input []byte, start int, end int) []byte {
 	cloned := make([]byte, end-start)
 	copy(cloned, input[start:end])
