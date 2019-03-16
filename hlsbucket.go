@@ -119,6 +119,12 @@ func vacuum() {
 	// filepath.Walk is breadth-first, so it take up to N passes
 	// for N-deep empty trees to clear out, but that's Ok.
 	for {
+		_, sterr := os.Stat(g.cfg.SaveDir)
+		if sterr!= nil {
+			log.Printf("no savedir\n")
+			time.Sleep(time.Second)
+			continue
+		}
 		filepath.Walk(g.cfg.SaveDir, func(path string, info os.FileInfo, err error) error {
 			if info.IsDir() && path != g.cfg.SaveDir {
 				files, _ := ioutil.ReadDir(path)
