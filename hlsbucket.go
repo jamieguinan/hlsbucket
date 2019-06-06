@@ -27,10 +27,12 @@ var PKT_SIZE int = 188
 
 type Config struct {
 	SaveDir string
-	ExpireCommand string
 	HlsReceivePort int
 	HlsRelayPort int
 	DebugInOut bool
+	ExpireCommand string
+	ExpireTime string
+	expireDuration time.Duration
 }
 
 type Global struct {
@@ -90,7 +92,8 @@ func handlePacket(buffer []byte, saveDir string) {
 			g.fout.Chmod(0644)
 			cmd := exec.Command(g.cfg.ExpireCommand, outname, "5m")
 			if cmd.Start() == nil {
-				defer cmd.Wait()
+				// defer cmd.Wait()
+				go cmd.Wait()
 			}
 
 			// Add outname to recent list.
@@ -115,9 +118,10 @@ func handlePacket(buffer []byte, saveDir string) {
 }
 
 func vacuum() {
-	// Periodically walk SaveDir and remove empty folders.
-	// filepath.Walk is breadth-first, so it take up to N passes
-	// for N-deep empty trees to clear out, but that's Ok.
+	// Periodically walk SaveDir and remove expired files and
+	// empty folders. filepath.Walk is breadth-first, so it takes
+	// up to N passes for N-deep empty trees to clear out, but
+	// that's Ok.
 	for {
 		_, sterr := os.Stat(g.cfg.SaveDir)
 		if sterr!= nil {
@@ -126,7 +130,9 @@ func vacuum() {
 			continue
 		}
 		filepath.Walk(g.cfg.SaveDir, func(path string, info os.FileInfo, err error) error {
-			if info.IsDir() && path != g.cfg.SaveDir {
+			if path == g.cfg.SaveDir {
+				// skip
+			} else if info.IsDir() {
 				files, _ := ioutil.ReadDir(path)
 				if len(files) == 0 {
 					os.Remove(path)
@@ -135,10 +141,14 @@ func vacuum() {
 				// folders could consume a lot of IO, starving the writer
 				// threads. A 10 millisecond sleep here could
 				// alleviate that.
+			} else if g.cfg.expireDuration != 0 {
+				if info.ModTime().Add(g.cfg.expireDuration).Before(time.Now()) {
+					os.Remove(path)
+				}
 			}
 			return nil
 		})
-		time.Sleep(time.Hour)
+		time.Sleep(time.Minute)
 	}
 }
 
@@ -157,6 +167,8 @@ func main() {
 	var receiver net.PacketConn
 	var relay net.PacketConn
 	var relayListen net.Listener
+
+	log.SetFlags(log.LstdFlags|log.Lmicroseconds)
 
 	g.recent = list.New()
 
@@ -180,6 +192,8 @@ func main() {
 		log.Printf("unmarshal error!\n")
 		os.Exit(1)
 	}
+
+	g.cfg.expireDuration, _ = time.ParseDuration(g.cfg.ExpireTime)
 
 	log.Printf("saveDir=%s\nexpireCommand=%s\nhlsReceivePort=%d\nhlsRelayPort=%d\n",
 		g.cfg.SaveDir,
