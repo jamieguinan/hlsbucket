@@ -90,10 +90,12 @@ func handlePacket(buffer []byte, saveDir string) {
 		if (err == nil) {
 			// Start new output file.
 			g.fout.Chmod(0644)
-			cmd := exec.Command(g.cfg.ExpireCommand, outname, "5m")
-			if cmd.Start() == nil {
-				// defer cmd.Wait()
-				go cmd.Wait()
+			if g.cfg.ExpireCommand != "" {
+				cmd := exec.Command(g.cfg.ExpireCommand, outname, "5m")
+				if cmd.Start() == nil {
+					// defer cmd.Wait()
+					go cmd.Wait()
+				}
 			}
 
 			// Add outname to recent list.
@@ -195,11 +197,12 @@ func main() {
 
 	g.cfg.expireDuration, _ = time.ParseDuration(g.cfg.ExpireTime)
 
-	log.Printf("saveDir=%s\nexpireCommand=%s\nhlsReceivePort=%d\nhlsRelayPort=%d\n",
+	log.Printf("saveDir=%s\nHlsReceivePort=%d\nHlsRelayPort=%d\nExpireCommand=%s\nExpireTime=%s\n",
 		g.cfg.SaveDir,
-		g.cfg.ExpireCommand,
 		g.cfg.HlsReceivePort,
-		g.cfg.HlsRelayPort)
+		g.cfg.HlsRelayPort,
+		g.cfg.ExpireCommand,
+		g.cfg.ExpireTime)
 
 	receiver, err = net.ListenPacket("udp", fmt.Sprintf(":%d", g.cfg.HlsReceivePort))
 	if err != nil {
