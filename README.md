@@ -13,7 +13,7 @@ aiming to be compatible with [HLS](https://en.wikipedia.org/wiki/HTTP_Live_Strea
 I initially wrote hlsbucket in C, but decided to port it to [Go](https://golang.org/),
 and I expect to maintain only the Go version going forward. The
 [first Go version](https://github.com/jamieguinan/hlsbucket/blob/aedbb8232692ab92f78bd0e2b0faab5e8e4c1986/hlsbucket.go) to reach feature parity with [the C version](https://github.com/jamieguinan/hlsbucket/blob/aedbb8232692ab92f78bd0e2b0faab5e8e4c1986/hlsbucket.c)
-was about 2/3 as many lines of code, and I was able to use Go standard libraries instead of requiring CTI modules and [Jsmn](https://github.com/zserge/jsmn).
+was about 2/3 as many lines of code, and I was able to use Go standard libraries instead of requiring CTI modules.
 
 ## How it works, sender
 
