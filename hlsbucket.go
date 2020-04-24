@@ -195,14 +195,20 @@ func main() {
 		os.Exit(1)
 	}
 
-	g.cfg.expireDuration, _ = time.ParseDuration(g.cfg.ExpireTime)
+	g.cfg.expireDuration, err = time.ParseDuration(g.cfg.ExpireTime)
+	if err != nil {
+		log.Printf("ParseDuration error!\n")
+		os.Exit(1)
+	}
 
-	log.Printf("saveDir=%s\nHlsReceivePort=%d\nHlsRelayPort=%d\nExpireCommand=%s\nExpireTime=%s\n",
+	log.Printf("saveDir=%s\nHlsReceivePort=%d\nHlsRelayPort=%d\n"+
+		"ExpireCommand=%s\nExpireTime=%s\nexpireDuration=%d\n",
 		g.cfg.SaveDir,
 		g.cfg.HlsReceivePort,
 		g.cfg.HlsRelayPort,
 		g.cfg.ExpireCommand,
-		g.cfg.ExpireTime)
+		g.cfg.ExpireTime,
+		g.cfg.expireDuration)
 
 	receiver, err = net.ListenPacket("udp", fmt.Sprintf(":%d", g.cfg.HlsReceivePort))
 	if err != nil {
