@@ -1,6 +1,14 @@
 // Golang port of hlsbucket.c
-// Catch Mpeg2TS packets over UDP, save as .ts, generate .m3u8 for HLS.
+//
+// * Catch Mpeg2TS packets over UDP
+// * Save as .ts files
+// * Generate urls for HLS including,
+//    /play
+//    /live_stream.m3u8
+//    /ts/YYYY/MM/DD/HH/*.ts
+//
 // Also allow relay to second host over UDP and/or TCP.
+//
 package main
 
 import (
@@ -12,26 +20,32 @@ import (
 	"net"
 	"log"
 	"bytes"
-	// "encoding/hex"
-	// "strconv"
 	"time"
 	"hash/crc32"
 	"os/exec"
 	"container/list"
 	"sync"
 	"path/filepath"
+	"strings"
+	"strconv"
 )
 
 var CFGPATH = "hlsbucket.json"
 var PKT_SIZE int = 188
 
 type Config struct {
+	// exported fields, can be set via json
 	SaveDir string
 	HlsReceivePort int
 	HlsRelayPort int
+	HlsListenPort int
 	DebugInOut bool
 	ExpireCommand string
 	ExpireTime string
+	StartCode string
+
+	// regular fields
+	startCodeBytes []byte
 	expireDuration time.Duration
 }
 
@@ -54,10 +68,9 @@ func MpegTS_PID(packet []byte) int {
 func handlePacket(buffer []byte, saveDir string) {
 	//pid := MpegTS_PID(buffer)
 	//log.Printf("%02x %02x %02x pid %d\n", buffer[0], buffer[1], buffer[2], pid)
-
-	nal7index := bytes.Index(buffer, []byte("\x00\x00\x00\x01\x27"))
-	if nal7index >= 0 {
-		log.Printf("NAL7 @ %d\n", nal7index)
+	startCodeIndex := bytes.Index(buffer, g.cfg.startCodeBytes)
+	if startCodeIndex >= 0 {
+		log.Printf("start code @ %d\n", startCodeIndex)
 		if g.fout != nil {
 			g.fout.Close()
 			g.fout = nil
@@ -91,7 +104,7 @@ func handlePacket(buffer []byte, saveDir string) {
 			// Start new output file.
 			g.fout.Chmod(0644)
 			if g.cfg.ExpireCommand != "" {
-				cmd := exec.Command(g.cfg.ExpireCommand, outname, "5m")
+				cmd := exec.Command(g.cfg.ExpireCommand, outname, g.cfg.ExpireTime)
 				if cmd.Start() == nil {
 					// defer cmd.Wait()
 					go cmd.Wait()
@@ -199,6 +212,29 @@ func main() {
 	if err != nil {
 		log.Printf("ParseDuration error!\n")
 		os.Exit(1)
+	}
+
+	scb := []byte("")
+	if g.cfg.StartCode != "" {
+		parts := strings.Split(g.cfg.StartCode, ".")
+		for _, bstr := range parts {
+			bval, err := strconv.ParseUint(bstr, 16, 32)
+			if err == nil && bval <= 255 {
+				scb = append(scb, byte(bval))
+			} else {
+				scb = []byte("")
+				log.Printf("Invalid StartCode in json: %s\n", g.cfg.StartCode)
+				break
+			}
+		}
+	}
+
+	if len(scb) > 0 {
+		// json configured value
+		g.cfg.startCodeBytes = scb
+	} else {
+		// Default. This is what my CTI program on RaspberryPI sends.
+		g.cfg.startCodeBytes = []byte("\x00\x00\x00\x01\x27")
 	}
 
 	log.Printf("saveDir=%s\nHlsReceivePort=%d\nHlsRelayPort=%d\n"+

@@ -1,0 +1,7 @@
+{
+  "SaveDir":"ts"
+  ,"HlsReceivePort":6679
+  ,"HlsListenPort":8004
+  ,"ExpireTime":"30m"
+  ,"StartCode":"00.00.00.01.68"
+}

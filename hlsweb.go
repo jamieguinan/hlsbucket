@@ -105,7 +105,10 @@ func http_server() {
 	})
 
 
-
-	err := http.ListenAndServe(":8004", nil)
+	if g.cfg.HlsListenPort == 0 {
+		g.cfg.HlsListenPort = 8004
+	}
+	listenAddr := fmt.Sprintf(":%d", g.cfg.HlsListenPort)
+	err := http.ListenAndServe(listenAddr, nil)
 	log.Printf(err.Error())
 }
