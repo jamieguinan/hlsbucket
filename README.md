@@ -68,7 +68,7 @@ The actual files are stored at,
 
 The files will pile up over time, so "ExpireTime" is set to 30 minutes
 (time must be formatted according to
-`https://golang.org/pkg/time/#ParseDuration`), and a background thread
+https://golang.org/pkg/time/#ParseDuration), and a background thread
 will clean up files older than 30 minutes.
 
 All this assumes,
@@ -103,8 +103,8 @@ On a Linux system with a UVC camera, this should work,
 
 I originally wrote hlsbucket to work with a
 [CTI](https://github.com/jamieguinan/cti/blob/master/README.md)
-program, which [muxes and
-segments](https://github.com/jamieguinan/cti/blob/master/MpegTSMux.c)
+program running on a Rasbperry PI, with a command file set up to [mux and
+segment](https://github.com/jamieguinan/cti/blob/master/MpegTSMux.c)
 [H.264](https://github.com/jamieguinan/cti/blob/master/RPiH264Enc.c)
 and [AAC](https://github.com/jamieguinan/cti/blob/master/AAC.c) data
 into 188-byte TS packets.
@@ -141,8 +141,8 @@ for everything I needed.
 ## Alternative HLS solutions,
 
   * Apple's
-    [https://developer.apple.com/documentation/http_live_streaming](HTTP
-    Live Streaming) page notes several frameworks that support HLS
+    [HTTP Live Streaming](https://developer.apple.com/documentation/http_live_streaming)
+    page notes several frameworks that support HLS
     generation.
   * ffmpeg supports an [hls muxer](https://ffmpeg.org/ffmpeg-formats.html#hls-2)
   * Many others [on github](https://github.com/search?q=hls+server)
